@@ -9,8 +9,8 @@ assert('String#unpack exists') do
 end
 
 assert("Directive 'C' test") do
-  a = [1, 2, 3, 4]
-  s = a.pack('C*')
-  s.unpack('C*') == a
+  a = [97, 98, 99, 100]
+  s = a.pack('CCCC')
+  s.unpack('CCCC') == a
 end
 
