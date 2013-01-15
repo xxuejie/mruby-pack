@@ -28,8 +28,17 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
         {
           tmp = mrb_convert_type(mrb, arr[arr_i++], MRB_TT_FIXNUM,
                                  "Integer", "to_int");
-          buf[0] = (uint8_t) mrb_fixnum(tmp);
+          buf[0] = (unsigned char) mrb_fixnum(tmp);
           mrb_str_cat(mrb, ret, buf, 1);
+        }
+        break;
+      case 'S':
+        {
+          tmp = mrb_convert_type(mrb, arr[arr_i++], MRB_TT_FIXNUM,
+                                 "Integer", "to_int");
+          /* native endian */
+          *((uint16_t*) buf) = (uint16_t) mrb_fixnum(tmp);
+          mrb_str_cat(mrb, ret, buf, 2);
         }
         break;
     }
@@ -60,9 +69,17 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
     switch (c) {
       case 'C':
         {
-          uint8_t v;
-          v = *((uint8_t*) (str_p + str_i));
+          unsigned char v;
+          v = *((unsigned char*) (str_p + str_i));
           str_i++;
+          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
+        }
+        break;
+      case 'S':
+        {
+          uint16_t v;
+          v = *((uint16_t*) (str_p + str_i));
+          str_i += 2;
           mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
         }
         break;

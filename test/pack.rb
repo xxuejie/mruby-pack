@@ -14,3 +14,7 @@ assert("Directive 'C' test") do
   s.unpack('CCCC') == a
 end
 
+assert("Directive 'S' test") do
+  a = [1234, 42, 65535]
+  a.pack('SSS').unpack('SSS') == a
+end
