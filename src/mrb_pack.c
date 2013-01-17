@@ -41,6 +41,18 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
           mrb_str_cat(mrb, ret, buf, 2);
         }
         break;
+      case 'L':
+        {
+          /* TODO: internally, mrb_fixnum is implemented using int, so
+           * cannot use all the values from uint32_t.
+           * We may choose to use float to emulate bigger ints.
+           */
+          tmp = mrb_convert_type(mrb, arr[arr_i++], MRB_TT_FIXNUM,
+                                 "Integer", "to_int");
+          *((uint32_t*) buf) = (uint32_t) mrb_fixnum(tmp);
+          mrb_str_cat(mrb, ret, buf, 4);
+        }
+        break;
     }
   }
 
@@ -80,6 +92,14 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
           uint16_t v;
           v = *((uint16_t*) (str_p + str_i));
           str_i += 2;
+          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
+        }
+        break;
+      case 'L':
+        {
+          uint32_t v;
+          v = *((uint32_t*) (str_p + str_i));
+          str_i += 4;
           mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
         }
         break;
