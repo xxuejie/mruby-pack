@@ -5,6 +5,18 @@
 #include <mruby/string.h>
 
 static mrb_value
+convert_to_integer(mrb_state* mrb, mrb_value v)
+{
+  mrb_value i = mrb_check_convert_type(mrb, v, MRB_TT_FIXNUM,
+                                       "Integer", "to_int");
+  if (mrb_nil_p(i)) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "Cannot convert given value to fixnum!");
+  }
+
+  return i;
+}
+
+static mrb_value
 mrb_array_pack(mrb_state* mrb, mrb_value ary)
 {
   mrb_value *arr, ret, tmp;
@@ -26,16 +38,14 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
     switch (c) {
       case 'C':
         {
-          tmp = mrb_convert_type(mrb, arr[arr_i++], MRB_TT_FIXNUM,
-                                 "Integer", "to_int");
+          tmp = convert_to_integer(mrb, arr[arr_i++]);
           buf[0] = (unsigned char) mrb_fixnum(tmp);
           mrb_str_cat(mrb, ret, buf, 1);
         }
         break;
       case 'S':
         {
-          tmp = mrb_convert_type(mrb, arr[arr_i++], MRB_TT_FIXNUM,
-                                 "Integer", "to_int");
+          tmp = convert_to_integer(mrb, arr[arr_i++]);
           /* native endian */
           *((uint16_t*) buf) = (uint16_t) mrb_fixnum(tmp);
           mrb_str_cat(mrb, ret, buf, 2);
@@ -43,16 +53,29 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
         break;
       case 'L':
         {
-          /* TODO: internally, mrb_fixnum is implemented using int, so
-           * cannot use all the values from uint32_t.
-           * We may choose to use float to emulate bigger ints.
+          /*
+           * NOTE: by default mruby use int32_t as the type of mrb_int.
+           * As a result, any value greater than 2147483647 will be of
+           * float type, and will trigger an error here, even though we
+           * are using uint32_t.
+           * We may choose to convert float value back to int, but that
+           * may bring undefined behavior which will differ on different
+           * platforms. Will come back later on this problem.
            */
-          tmp = mrb_convert_type(mrb, arr[arr_i++], MRB_TT_FIXNUM,
-                                 "Integer", "to_int");
+          tmp = convert_to_integer(mrb, arr[arr_i++]);
           *((uint32_t*) buf) = (uint32_t) mrb_fixnum(tmp);
           mrb_str_cat(mrb, ret, buf, 4);
         }
         break;
+#ifdef MRB_INT64
+      case 'Q':
+        {
+          tmp = convert_to_integer(mrb, arr[arr_i++]);
+          *((uint64_t*) buf) = (uint64_t) mrb_fixnum(tmp);
+          mrb_str_cat(mrb, ret, buf, 8);
+        }
+        break;
+#endif
     }
   }
 
@@ -103,6 +126,16 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
           mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
         }
         break;
+#ifdef MRB_INT64
+      case 'Q':
+        {
+          uint64_t v;
+          v = *((uint64_t*) (str_p + str_i));
+          str_i += 8;
+          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
+        }
+        break;
+#endif
     }
   }
 
