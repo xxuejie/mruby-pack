@@ -3,34 +3,215 @@
 
 #include <mruby.h>
 #include <mruby/array.h>
+#include <mruby/numeric.h>
 #include <mruby/string.h>
 
-static mrb_value
-convert_to_integer(mrb_state* mrb, mrb_value v)
+#define ROUND_FLOAT(f_) ((f_) >= 0 ? (f_ + 0.5) : (f_ - 0.5))
+
+#define CAST_FROM_STRING(str_p_, str_i_, t_) *((t_*) ((str_p_) + (str_i_)))
+
+enum pack_type {
+  PACK_INTEGER = 0
+};
+
+static int32_t
+convert_to_int32(mrb_state* mrb, mrb_value v, int sign)
 {
-  mrb_value i = mrb_check_convert_type(mrb, v, MRB_TT_FIXNUM,
-                                       "Integer", "to_int");
-  if (mrb_nil_p(i)) {
-    mrb_raise(mrb, E_ARGUMENT_ERROR, "Cannot convert given value to fixnum!");
+  int32_t ret = 0;
+
+  switch(mrb_type(v)) {
+    case MRB_TT_FIXNUM:
+      ret = (int32_t) mrb_fixnum(v);
+      break;
+    case MRB_TT_FLOAT:
+      /*
+       * NOTE: by default mruby use int32_t as the type of mrb_int.
+       * As a result, any value greater than 2147483647 will be of
+       * float type, if we are converting to an unsigned value.
+       * Here we will casting floats back to integers to fix
+       * this problem.
+       * In addition, float=>int32 and float =>uint32 follow different
+       * rules, we need to take care of each case separately.
+       */
+      if (sign == 1) {
+        ret = (int32_t) ROUND_FLOAT(mrb_float(v));
+      } else {
+        ret = (int32_t) ((uint32_t) ROUND_FLOAT(mrb_float(v)));
+      }
+      break;
+    default:
+      {
+        mrb_value tmp = mrb_convert_type(mrb, v, MRB_TT_FIXNUM,
+                                         "Integer", "to_int");
+        ret = (int32_t) mrb_fixnum(tmp);
+      }
+  }
+  return ret;
+}
+
+/*
+ * For some systems, including the JavaScript environment used
+ * in Webruby, 64-bit operations are emulated and much slower
+ * than 32-bit operations. So we would only convert fixnum into
+ * 64-bit values when necessary.
+ */
+static int64_t
+convert_to_int64(mrb_state* mrb, mrb_value v, int sign)
+{
+  int64_t ret = 0;
+
+  switch(mrb_type(v)) {
+    case MRB_TT_FIXNUM:
+      ret = (int64_t) mrb_fixnum(v);
+      break;
+    case MRB_TT_FLOAT:
+      if (sign == 1) {
+        ret = (int64_t) ROUND_FLOAT(mrb_float(v));
+      } else {
+        ret = (int64_t) ((uint64_t) ROUND_FLOAT(mrb_float(v)));
+      }
+      break;
+    default:
+      {
+        mrb_value tmp = mrb_convert_type(mrb, v, MRB_TT_FIXNUM,
+                                         "Integer", "to_int");
+        ret = (int64_t) mrb_fixnum(tmp);
+      }
+  }
+  return ret;
+}
+
+static mrb_value
+convert_from_int32(int32_t v)
+{
+  if (FIXABLE(v)) {
+    return mrb_fixnum_value((mrb_int) v);
+  } else {
+    return mrb_float_value((mrb_float) v);
+  }
+}
+
+static mrb_value
+convert_from_int64(int64_t v)
+{
+  if (FIXABLE(v)) {
+    return mrb_fixnum_value((mrb_int) v);
+  } else {
+    return mrb_float_value((mrb_float) v);
+  }
+}
+
+static int
+pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, mrb_value ret_str)
+{
+  char buf[8];
+
+  switch (size) {
+    case 1:
+      if (sign == 1) {
+        *((char*) buf) = (char) convert_to_int32(mrb, v, sign);
+      } else {
+        *((unsigned char*) buf) = (unsigned char) convert_to_int32(mrb, v, sign);
+      }
+      mrb_str_cat(mrb, ret_str, buf, 1);
+      return 1;
+    case 2:
+      if (sign == 1) {
+        *((int16_t*) buf) = (int16_t) convert_to_int32(mrb, v, sign);
+      } else {
+        *((uint16_t*) buf) = (uint16_t) convert_to_int32(mrb, v, sign);
+      }
+      mrb_str_cat(mrb, ret_str, buf, 2);
+      return 2;
+    case 4:
+      if (sign == 1) {
+        *((int32_t*) buf) = (int32_t) convert_to_int32(mrb, v, sign);
+      } else {
+        *((uint32_t*) buf) = (uint32_t) convert_to_int32(mrb, v, sign);
+      }
+      mrb_str_cat(mrb, ret_str, buf, 4);
+      return 4;
+    case 8:
+      if (sign == 1) {
+        *((int64_t*) buf) = (int64_t) convert_to_int64(mrb, v, sign);
+      } else {
+        *((uint64_t*) buf) = (uint64_t) convert_to_int64(mrb, v, sign);
+      }
+      mrb_str_cat(mrb, ret_str, buf, 8);
+      return 8;
+    default:
+      mrb_raisef(mrb, E_ARGUMENT_ERROR, "Cannot pack a fixnum with size %d!",
+                 size);
   }
 
-  return i;
+  /* Actually this is not reachable. */
+  return 0;
+}
+
+static mrb_value
+unpack_fixnum(mrb_state* mrb, int size, int sign, char* str, int* str_i)
+{
+  mrb_value ret;
+  switch (size) {
+    case 1:
+      if (sign == 1) {
+        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, char));
+      } else {
+        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, unsigned char));
+      }
+      *str_i += 1;
+      return ret;
+    case 2:
+      if (sign == 1) {
+        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, int16_t));
+      } else {
+        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, uint16_t));
+      }
+      *str_i += 2;
+      return ret;
+    case 4:
+      if (sign == 1) {
+        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, int32_t));
+      } else {
+        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, uint32_t));
+      }
+      *str_i += 4;
+      return ret;
+    case 8:
+      if (sign == 1) {
+        ret = convert_from_int64(CAST_FROM_STRING(str, *str_i, int64_t));
+      } else {
+        ret = convert_from_int64(CAST_FROM_STRING(str, *str_i, uint64_t));
+      }
+      *str_i += 8;
+      return ret;
+    default:
+      mrb_raisef(mrb, E_ARGUMENT_ERROR, "Cannot pack a fixnum with size %d!",
+                 size);
+  }
+  /* Not reachable */
+  return mrb_nil_value();
 }
 
 static mrb_value
 mrb_array_pack(mrb_state* mrb, mrb_value ary)
 {
-  mrb_value *arr, ret, tmp;
-  char *tstr_p, c, buf[8];
+  mrb_value *arr, ret;
+  char *tstr_p, c;
   int arr_len, arr_i, tstr_i, tstr_len;
+  enum pack_type type = PACK_INTEGER;
+  int size = -1, sign = -1, pack_len = 0;
 
+  /* Template string */
   mrb_get_args(mrb, "s", &tstr_p, &tstr_len);
   tstr_i = 0;
 
+  /* Array to pack */
   arr = RARRAY_PTR(ary);
   arr_len = RARRAY_LEN(ary);
   arr_i = 0;
 
+  /* Returned packed string */
   ret = mrb_str_new_cstr(mrb, "");
 
   while ((arr_i < arr_len) && (tstr_i < tstr_len)) {
@@ -38,73 +219,62 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
 
     switch (c) {
       case 'C':
-        {
-          tmp = convert_to_integer(mrb, arr[arr_i++]);
-          buf[0] = (unsigned char) mrb_fixnum(tmp);
-          mrb_str_cat(mrb, ret, buf, 1);
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 0;
+        size = 1;
         break;
       case 'c':
-        {
-          tmp = convert_to_integer(mrb, arr[arr_i++]);
-          buf[0] = (char) mrb_fixnum(tmp);
-          mrb_str_cat(mrb, ret, buf, 1);
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 1;
+        size = 1;
         break;
       case 'S':
-        {
-          tmp = convert_to_integer(mrb, arr[arr_i++]);
-          /* native endian */
-          *((uint16_t*) buf) = (uint16_t) mrb_fixnum(tmp);
-          mrb_str_cat(mrb, ret, buf, 2);
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 0;
+        size = 2;
         break;
       case 's':
-        {
-          tmp = convert_to_integer(mrb, arr[arr_i++]);
-          *((int16_t*) buf) = (int16_t) mrb_fixnum(tmp);
-          mrb_str_cat(mrb, ret, buf, 2);
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 1;
+        size = 2;
         break;
       case 'L':
-        {
-          /*
-           * NOTE: by default mruby use int32_t as the type of mrb_int.
-           * As a result, any value greater than 2147483647 will be of
-           * float type, and will trigger an error here, even though we
-           * are using uint32_t.
-           * We may choose to convert float value back to int, but that
-           * may bring undefined behavior which will differ on different
-           * platforms. Will come back later on this problem.
-           */
-          tmp = convert_to_integer(mrb, arr[arr_i++]);
-          *((uint32_t*) buf) = (uint32_t) mrb_fixnum(tmp);
-          mrb_str_cat(mrb, ret, buf, 4);
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 0;
+        size = 4;
         break;
       case 'l':
-        {
-          tmp = convert_to_integer(mrb, arr[arr_i++]);
-          *((int32_t*) buf) = (int32_t) mrb_fixnum(tmp);
-          mrb_str_cat(mrb, ret, buf, 4);
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 1;
+        size = 4;
         break;
-#ifdef MRB_INT64
       case 'Q':
-        {
-          tmp = convert_to_integer(mrb, arr[arr_i++]);
-          *((uint64_t*) buf) = (uint64_t) mrb_fixnum(tmp);
-          mrb_str_cat(mrb, ret, buf, 8);
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 0;
+        size = 8;
         break;
       case 'q':
-        {
-          tmp = convert_to_integer(mrb, arr[arr_i++]);
-          *((int64_t*) buf) = (int64_t) mrb_fixnum(tmp);
-          mrb_str_cat(mrb, ret, buf, 8);
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 1;
+        size = 8;
         break;
-#endif
+    }
+
+    while (pack_len > 0) {
+      switch (type) {
+        case PACK_INTEGER:
+          pack_fixnum(mrb, arr[arr_i++], size, sign, ret);
+          break;
+      }
+      pack_len--;
     }
   }
 
@@ -114,9 +284,11 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
 static mrb_value
 mrb_string_unpack(mrb_state* mrb, mrb_value str)
 {
-  mrb_value ret;
+  mrb_value ret, unpacked_v;
   char *str_p, *tstr_p, c;
   int str_i, str_len, tstr_i, tstr_len;
+  enum pack_type type = PACK_INTEGER;
+  int size = -1, sign = -1, pack_len = 0;
 
   mrb_get_args(mrb, "s", &tstr_p, &tstr_len);
   tstr_i = 0;
@@ -132,71 +304,66 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
 
     switch (c) {
       case 'C':
-        {
-          unsigned char v;
-          v = *((unsigned char*) (str_p + str_i));
-          str_i++;
-          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 0;
+        size = 1;
         break;
       case 'c':
-        {
-          char v;
-          v = *((char*) (str_p + str_i));
-          str_i++;
-          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 1;
+        size = 1;
         break;
       case 'S':
-        {
-          uint16_t v;
-          v = *((uint16_t*) (str_p + str_i));
-          str_i += 2;
-          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 0;
+        size = 2;
         break;
       case 's':
-        {
-          int16_t v;
-          v = *((int16_t*) (str_p + str_i));
-          str_i += 2;
-          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 1;
+        size = 2;
         break;
       case 'L':
-        {
-          uint32_t v;
-          v = *((uint32_t*) (str_p + str_i));
-          str_i += 4;
-          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 0;
+        size = 4;
         break;
       case 'l':
-        {
-          int32_t v;
-          v = *((int32_t*) (str_p + str_i));
-          str_i += 4;
-          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 1;
+        size = 4;
         break;
-#ifdef MRB_INT64
       case 'Q':
-        {
-          uint64_t v;
-          v = *((uint64_t*) (str_p + str_i));
-          str_i += 8;
-          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 0;
+        size = 8;
         break;
       case 'q':
-        {
-          int64_t v;
-          v = *((int64_t*) (str_p + str_i));
-          str_i += 8;
-          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
-        }
+        pack_len = 1;
+        type = PACK_INTEGER;
+        sign = 1;
+        size = 8;
         break;
-#endif
+    }
+
+    while (pack_len > 0) {
+      unpacked_v = mrb_nil_value();
+      switch (type) {
+        case PACK_INTEGER:
+          unpacked_v = unpack_fixnum(mrb, size, sign, str_p, &str_i);
+          break;
+      }
+      if (!mrb_nil_p(unpacked_v)) {
+        mrb_ary_push(mrb, ret, unpacked_v);
+      }
+      pack_len--;
     }
   }
 

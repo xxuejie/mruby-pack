@@ -10,8 +10,7 @@ end
 
 assert("Directive 'C' test") do
   a = [97, 0, 98, 99, 100]
-  s = a.pack('CCCCC')
-  s.unpack('CCCCC') == a
+  a.pack('CCCCC').unpack('CCCCC') == a
 end
 
 assert("Directive 'S' test") do
@@ -25,13 +24,8 @@ assert("Directive 'L' test") do
 end
 
 assert("Directive 'Q' test") do
-  if 2147483648.class == Fixnum
-    # Only test this when 64-bit fixnum is available
-    a = [0, 2147483648, 3007, 100000000000]
-    a.pack('QQQQ').unpack('QQQQ') == a
-  else
-    true
-  end
+  a = [0, 2147483648, 3007, 100000000000]
+  a.pack('QQQQ').unpack('QQQQ') == a
 end
 
 assert("'c' test") do
@@ -45,18 +39,11 @@ assert("'s' test") do
 end
 
 assert("'l' test") do
-  # For mruby, -2147483648 is actually float, maybe this has to
-  # do with the parser?
-  a = [0, 65536, -2147483647, 2147483647]
+  a = [0, 65536, -2147483648, 2147483647]
   a.pack('llll').unpack('llll') == a
 end
 
 assert("Directive 'q' test") do
-  if 2147483648.class == Fixnum
-    # Only test this when 64-bit fixnum is available
-    a = [0, 2147483648, -3007, 100000000000]
-    a.pack('qqqq').unpack('qqqq') == a
-  else
-    true
-  end
+  a = [0, 2147483648, -3007, 100000000000]
+  a.pack('qqqq').unpack('qqqq') == a
 end
