@@ -47,3 +47,28 @@ assert("Directive 'q' test") do
   a = [0, 2147483648, -3007, 100000000000]
   a.pack('qqqq').unpack('qqqq') == a
 end
+
+assert("'*' test") do
+  a = [1, 2, 3, 4, 5, 0, -1, -2]
+  a.pack('s*').unpack('s*') == a
+end
+
+assert("'*' must follow some directives") do
+  begin
+    [1, 2].pack('*')
+  rescue ArgumentError
+    true
+  else
+    false
+  end
+end
+
+assert("'*' must follow some directives in unpack") do
+  begin
+    "abc".unpack('*')
+  rescue ArgumentError
+    true
+  else
+    false
+  end
+end
