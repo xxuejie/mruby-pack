@@ -1,3 +1,4 @@
+#include <stdio.h>
 #include <stdint.h>
 
 #include <mruby.h>
@@ -43,11 +44,25 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
           mrb_str_cat(mrb, ret, buf, 1);
         }
         break;
+      case 'c':
+        {
+          tmp = convert_to_integer(mrb, arr[arr_i++]);
+          buf[0] = (char) mrb_fixnum(tmp);
+          mrb_str_cat(mrb, ret, buf, 1);
+        }
+        break;
       case 'S':
         {
           tmp = convert_to_integer(mrb, arr[arr_i++]);
           /* native endian */
           *((uint16_t*) buf) = (uint16_t) mrb_fixnum(tmp);
+          mrb_str_cat(mrb, ret, buf, 2);
+        }
+        break;
+      case 's':
+        {
+          tmp = convert_to_integer(mrb, arr[arr_i++]);
+          *((int16_t*) buf) = (int16_t) mrb_fixnum(tmp);
           mrb_str_cat(mrb, ret, buf, 2);
         }
         break;
@@ -67,11 +82,25 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
           mrb_str_cat(mrb, ret, buf, 4);
         }
         break;
+      case 'l':
+        {
+          tmp = convert_to_integer(mrb, arr[arr_i++]);
+          *((int32_t*) buf) = (int32_t) mrb_fixnum(tmp);
+          mrb_str_cat(mrb, ret, buf, 4);
+        }
+        break;
 #ifdef MRB_INT64
       case 'Q':
         {
           tmp = convert_to_integer(mrb, arr[arr_i++]);
           *((uint64_t*) buf) = (uint64_t) mrb_fixnum(tmp);
+          mrb_str_cat(mrb, ret, buf, 8);
+        }
+        break;
+      case 'q':
+        {
+          tmp = convert_to_integer(mrb, arr[arr_i++]);
+          *((int64_t*) buf) = (int64_t) mrb_fixnum(tmp);
           mrb_str_cat(mrb, ret, buf, 8);
         }
         break;
@@ -110,10 +139,26 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
           mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
         }
         break;
+      case 'c':
+        {
+          char v;
+          v = *((char*) (str_p + str_i));
+          str_i++;
+          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
+        }
+        break;
       case 'S':
         {
           uint16_t v;
           v = *((uint16_t*) (str_p + str_i));
+          str_i += 2;
+          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
+        }
+        break;
+      case 's':
+        {
+          int16_t v;
+          v = *((int16_t*) (str_p + str_i));
           str_i += 2;
           mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
         }
@@ -126,11 +171,27 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
           mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
         }
         break;
+      case 'l':
+        {
+          int32_t v;
+          v = *((int32_t*) (str_p + str_i));
+          str_i += 4;
+          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
+        }
+        break;
 #ifdef MRB_INT64
       case 'Q':
         {
           uint64_t v;
           v = *((uint64_t*) (str_p + str_i));
+          str_i += 8;
+          mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
+        }
+        break;
+      case 'q':
+        {
+          int64_t v;
+          v = *((int64_t*) (str_p + str_i));
           str_i += 8;
           mrb_ary_push(mrb, ret, mrb_fixnum_value(v));
         }
