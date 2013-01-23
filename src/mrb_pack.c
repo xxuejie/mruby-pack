@@ -15,6 +15,106 @@ enum pack_type {
   PACK_FLOAT
 };
 
+#define ALL_ARGUMENT_SIZE -1
+
+struct parse_options {
+  /* length of array to pack/unpack */
+  int pack_len;
+
+  /* pack/unpack type */
+  enum pack_type type;
+
+  /* Fixnum size */
+  int size;
+
+  /* 1 for signed, 0 for unsigned */
+  int sign;
+
+  /* 1 for double, 0 for float */
+  int is_double;
+};
+
+static void
+parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
+             struct parse_options* opts)
+{
+  char c = tstr[(*tstr_i)++];
+
+  switch (c) {
+    case 'C':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 0;
+      opts->size = 1;
+      break;
+    case 'c':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 1;
+      opts->size = 1;
+      break;
+    case 'S':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 0;
+      opts->size = 2;
+      break;
+    case 's':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 1;
+      opts->size = 2;
+      break;
+    case 'L':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 0;
+      opts->size = 4;
+      break;
+    case 'l':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 1;
+      opts->size = 4;
+      break;
+    case 'Q':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 0;
+      opts->size = 8;
+      break;
+    case 'q':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 1;
+      opts->size = 8;
+      break;
+    case 'D':
+    case 'd':
+      opts->pack_len = 1;
+      opts->type = PACK_FLOAT;
+      opts->is_double = 1;
+      /* Used by '*' */
+      opts->size = sizeof(double);
+      break;
+    case 'F':
+    case 'f':
+      opts->pack_len = 1;
+      opts->type = PACK_FLOAT;
+      opts->is_double = 0;
+      opts->size = sizeof(float);
+      break;
+    case '*':
+      /* Uses type, sign, size from last run */
+      if (*tstr_i == 1) {
+        mrb_raise(mrb, E_ARGUMENT_ERROR,
+                  "'*' must follow existing directives!");
+      }
+      opts->pack_len = ALL_ARGUMENT_SIZE;
+      break;
+  }
+}
+
 static int32_t
 convert_to_int32(mrb_state* mrb, mrb_value v, int sign)
 {
@@ -246,10 +346,13 @@ static mrb_value
 mrb_array_pack(mrb_state* mrb, mrb_value ary)
 {
   mrb_value *arr, ret;
-  char *tstr_p, c;
+  char *tstr_p;
   int arr_len, arr_i, tstr_i, tstr_len;
-  enum pack_type type = PACK_INTEGER;
-  int size = -1, sign = -1, pack_len = 0, is_double = 0;
+  struct parse_options opts;
+
+  opts.type = PACK_INTEGER;
+  opts.pack_len = opts.is_double = 0;
+  opts.size = opts.sign = -1;
 
   /* Template string */
   mrb_get_args(mrb, "s", &tstr_p, &tstr_len);
@@ -264,89 +367,21 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
   ret = mrb_str_new_cstr(mrb, "");
 
   while ((arr_i < arr_len) && (tstr_i < tstr_len)) {
-    c = tstr_p[tstr_i++];
-
-    switch (c) {
-      case 'C':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 0;
-        size = 1;
-        break;
-      case 'c':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 1;
-        size = 1;
-        break;
-      case 'S':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 0;
-        size = 2;
-        break;
-      case 's':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 1;
-        size = 2;
-        break;
-      case 'L':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 0;
-        size = 4;
-        break;
-      case 'l':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 1;
-        size = 4;
-        break;
-      case 'Q':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 0;
-        size = 8;
-        break;
-      case 'q':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 1;
-        size = 8;
-        break;
-      case 'D':
-      case 'd':
-        pack_len = 1;
-        type = PACK_FLOAT;
-        is_double = 1;
-        break;
-      case 'F':
-      case 'f':
-        pack_len = 1;
-        type = PACK_FLOAT;
-        is_double = 0;
-        break;
-      case '*':
-        /* Uses type, sign, size from last run */
-        if (tstr_i == 1) {
-          mrb_raise(mrb, E_ARGUMENT_ERROR,
-                    "'*' must follow existing directives!");
-        }
-        pack_len = arr_len - arr_i;
-        break;
+    parse_option(mrb, tstr_p, tstr_len, &tstr_i, &opts);
+    if (opts.pack_len == ALL_ARGUMENT_SIZE) {
+      opts.pack_len = arr_len - arr_i;
     }
 
-    while (pack_len > 0) {
-      switch (type) {
+    while (opts.pack_len > 0) {
+      switch (opts.type) {
         case PACK_INTEGER:
-          pack_fixnum(mrb, arr[arr_i++], size, sign, ret);
+          pack_fixnum(mrb, arr[arr_i++], opts.size, opts.sign, ret);
           break;
         case PACK_FLOAT:
-          pack_float(mrb, arr[arr_i++], is_double, ret);
+          pack_float(mrb, arr[arr_i++], opts.is_double, ret);
           break;
       }
-      pack_len--;
+      opts.pack_len--;
     }
   }
 
@@ -359,8 +394,11 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
   mrb_value ret, unpacked_v;
   char *str_p, *tstr_p, c;
   int str_i, str_len, tstr_i, tstr_len;
-  enum pack_type type = PACK_INTEGER;
-  int size = -1, sign = -1, pack_len = 0, is_double = 0;
+  struct parse_options opts;
+
+  opts.type = PACK_INTEGER;
+  opts.pack_len = opts.is_double = 0;
+  opts.size = opts.sign = -1;
 
   mrb_get_args(mrb, "s", &tstr_p, &tstr_len);
   tstr_i = 0;
@@ -372,93 +410,25 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
   ret = mrb_ary_new(mrb);
 
   while ((str_i < str_len) && (tstr_i < tstr_len)) {
-    c = tstr_p[tstr_i++];
-
-    switch (c) {
-      case 'C':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 0;
-        size = 1;
-        break;
-      case 'c':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 1;
-        size = 1;
-        break;
-      case 'S':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 0;
-        size = 2;
-        break;
-      case 's':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 1;
-        size = 2;
-        break;
-      case 'L':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 0;
-        size = 4;
-        break;
-      case 'l':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 1;
-        size = 4;
-        break;
-      case 'Q':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 0;
-        size = 8;
-        break;
-      case 'q':
-        pack_len = 1;
-        type = PACK_INTEGER;
-        sign = 1;
-        size = 8;
-        break;
-      case 'D':
-      case 'd':
-        pack_len = 1;
-        type = PACK_FLOAT;
-        is_double = 1;
-        break;
-      case 'F':
-      case 'f':
-        pack_len = 1;
-        type = PACK_FLOAT;
-        is_double = 0;
-        break;
-      case '*':
-        /* Uses type, sign, size from last run */
-        if (tstr_i == 1) {
-          mrb_raise(mrb, E_ARGUMENT_ERROR,
-                    "'*' must follow existing directives!");
-        }
-        pack_len = (str_len - str_i) / size;
-        break;
+    parse_option(mrb, tstr_p, tstr_len, &tstr_i, &opts);
+    if (opts.pack_len == ALL_ARGUMENT_SIZE) {
+      opts.pack_len = (str_len - str_i) / opts.size;
     }
 
-    while (pack_len > 0) {
+    while (opts.pack_len > 0) {
       unpacked_v = mrb_nil_value();
-      switch (type) {
+      switch (opts.type) {
         case PACK_INTEGER:
-          unpacked_v = unpack_fixnum(mrb, size, sign, str_p, &str_i);
+          unpacked_v = unpack_fixnum(mrb, opts.size, opts.sign, str_p, &str_i);
           break;
         case PACK_FLOAT:
-          unpacked_v = unpack_float(mrb, is_double, str_p, &str_i);
+          unpacked_v = unpack_float(mrb, opts.is_double, str_p, &str_i);
           break;
       }
       if (!mrb_nil_p(unpacked_v)) {
         mrb_ary_push(mrb, ret, unpacked_v);
       }
-      pack_len--;
+      opts.pack_len--;
     }
   }
 

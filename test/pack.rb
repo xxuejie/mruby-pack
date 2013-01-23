@@ -111,3 +111,8 @@ assert("pack double") do
   a = [2.345678, 3.1415926535, -1.23456789, 0.00000001]
   check_floats(a.pack('DDdd').unpack('ddDD'), a)
 end
+
+assert("float with '*' test") do
+  a = [1.1, 2.34, 5.601, 100.001, 0.0, -7.123]
+  check_floats(a.pack('f*').unpack('f*'), a, 1e-5)
+end
