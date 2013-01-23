@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <mruby.h>
 #include <mruby/array.h>
@@ -8,7 +9,13 @@
 
 #define ROUND_FLOAT(f_) ((f_) >= 0 ? (f_ + 0.5) : (f_ - 0.5))
 
-#define CAST_FROM_STRING(str_p_, str_i_, t_) *((t_*) ((str_p_) + (str_i_)))
+#define CAST_FROM_STRING(str_p_, t_) *((t_*) (str_p_))
+
+#ifdef MRB_ENDIAN_BIG
+static const int native_endian = 0;
+#else
+static const int native_endian = 1;
+#endif
 
 enum pack_type {
   PACK_INTEGER = 0,
@@ -32,6 +39,9 @@ struct parse_options {
 
   /* 1 for double, 0 for float */
   int is_double;
+
+  /* 1 for little endian, 0 for big endian */
+  int endian;
 };
 
 static void
@@ -46,48 +56,56 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->type = PACK_INTEGER;
       opts->sign = 0;
       opts->size = 1;
+      opts->endian = native_endian;
       break;
     case 'c':
       opts->pack_len = 1;
       opts->type = PACK_INTEGER;
       opts->sign = 1;
       opts->size = 1;
+      opts->endian = native_endian;
       break;
     case 'S':
       opts->pack_len = 1;
       opts->type = PACK_INTEGER;
       opts->sign = 0;
       opts->size = 2;
+      opts->endian = native_endian;
       break;
     case 's':
       opts->pack_len = 1;
       opts->type = PACK_INTEGER;
       opts->sign = 1;
       opts->size = 2;
+      opts->endian = native_endian;
       break;
     case 'L':
       opts->pack_len = 1;
       opts->type = PACK_INTEGER;
       opts->sign = 0;
       opts->size = 4;
+      opts->endian = native_endian;
       break;
     case 'l':
       opts->pack_len = 1;
       opts->type = PACK_INTEGER;
       opts->sign = 1;
       opts->size = 4;
+      opts->endian = native_endian;
       break;
     case 'Q':
       opts->pack_len = 1;
       opts->type = PACK_INTEGER;
       opts->sign = 0;
       opts->size = 8;
+      opts->endian = native_endian;
       break;
     case 'q':
       opts->pack_len = 1;
       opts->type = PACK_INTEGER;
       opts->sign = 1;
       opts->size = 8;
+      opts->endian = native_endian;
       break;
     case 'D':
     case 'd':
@@ -96,6 +114,7 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->is_double = 1;
       /* Used by '*' */
       opts->size = sizeof(double);
+      opts->endian = native_endian;
       break;
     case 'F':
     case 'f':
@@ -103,6 +122,7 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->type = PACK_FLOAT;
       opts->is_double = 0;
       opts->size = sizeof(float);
+      opts->endian = native_endian;
       break;
     case '*':
       /* Uses type, sign, size from last run */
@@ -113,6 +133,23 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->pack_len = ALL_ARGUMENT_SIZE;
       break;
   }
+}
+
+/* Check given endian with native endian, swap the buffer if different */
+static char*
+check_endian(char* buf, int len, int endian)
+{
+  if (endian != native_endian) {
+    int i;
+    char ch;
+
+    for (i = 0; i < len / 2; i++) {
+      ch = buf[i];
+      buf[i] = buf[len - i - 1];
+      buf[len - i - 1] = ch;
+    }
+  }
+  return buf;
 }
 
 static int32_t
@@ -203,7 +240,8 @@ convert_from_int64(int64_t v)
 }
 
 static int
-pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, mrb_value ret_str)
+pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, int endian,
+            mrb_value ret_str)
 {
   char buf[8];
 
@@ -214,7 +252,7 @@ pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, mrb_value ret_str)
       } else {
         *((unsigned char*) buf) = (unsigned char) convert_to_int32(mrb, v, sign);
       }
-      mrb_str_cat(mrb, ret_str, buf, 1);
+      mrb_str_cat(mrb, ret_str, check_endian(buf, 1, endian), 1);
       return 1;
     case 2:
       if (sign == 1) {
@@ -222,7 +260,7 @@ pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, mrb_value ret_str)
       } else {
         *((uint16_t*) buf) = (uint16_t) convert_to_int32(mrb, v, sign);
       }
-      mrb_str_cat(mrb, ret_str, buf, 2);
+      mrb_str_cat(mrb, ret_str, check_endian(buf, 2, endian), 2);
       return 2;
     case 4:
       if (sign == 1) {
@@ -230,7 +268,7 @@ pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, mrb_value ret_str)
       } else {
         *((uint32_t*) buf) = (uint32_t) convert_to_int32(mrb, v, sign);
       }
-      mrb_str_cat(mrb, ret_str, buf, 4);
+      mrb_str_cat(mrb, ret_str, check_endian(buf, 4, endian), 4);
       return 4;
     case 8:
       if (sign == 1) {
@@ -238,7 +276,7 @@ pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, mrb_value ret_str)
       } else {
         *((uint64_t*) buf) = (uint64_t) convert_to_int64(mrb, v, sign);
       }
-      mrb_str_cat(mrb, ret_str, buf, 8);
+      mrb_str_cat(mrb, ret_str, check_endian(buf, 8, endian), 8);
       return 8;
     default:
       mrb_raisef(mrb, E_ARGUMENT_ERROR, "Cannot pack a fixnum with size %d!",
@@ -250,41 +288,56 @@ pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, mrb_value ret_str)
 }
 
 static mrb_value
-unpack_fixnum(mrb_state* mrb, int size, int sign, char* str, int* str_i)
+unpack_fixnum(mrb_state* mrb, int size, int sign, int endian,
+              char* str, int* str_i)
 {
   mrb_value ret;
+  char buf[8];
+
   switch (size) {
     case 1:
-      if (sign == 1) {
-        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, char));
-      } else {
-        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, unsigned char));
-      }
+      memcpy(buf, str + (*str_i), 1);
       *str_i += 1;
+      check_endian(buf, 1, endian);
+
+      if (sign == 1) {
+        ret = convert_from_int32(CAST_FROM_STRING(buf, char));
+      } else {
+        ret = convert_from_int32(CAST_FROM_STRING(buf, unsigned char));
+      }
       return ret;
     case 2:
-      if (sign == 1) {
-        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, int16_t));
-      } else {
-        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, uint16_t));
-      }
+      memcpy(buf, str + (*str_i), 2);
       *str_i += 2;
+      check_endian(buf, 2, endian);
+
+      if (sign == 1) {
+        ret = convert_from_int32(CAST_FROM_STRING(buf, int16_t));
+      } else {
+        ret = convert_from_int32(CAST_FROM_STRING(buf, uint16_t));
+      }
       return ret;
     case 4:
-      if (sign == 1) {
-        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, int32_t));
-      } else {
-        ret = convert_from_int32(CAST_FROM_STRING(str, *str_i, uint32_t));
-      }
+      memcpy(buf, str + (*str_i), 4);
       *str_i += 4;
+      check_endian(buf, 4, endian);
+
+      if (sign == 1) {
+        ret = convert_from_int32(CAST_FROM_STRING(buf, int32_t));
+      } else {
+        ret = convert_from_int32(CAST_FROM_STRING(buf, uint32_t));
+      }
       return ret;
     case 8:
-      if (sign == 1) {
-        ret = convert_from_int64(CAST_FROM_STRING(str, *str_i, int64_t));
-      } else {
-        ret = convert_from_int64(CAST_FROM_STRING(str, *str_i, uint64_t));
-      }
+      memcpy(buf, str + (*str_i), 8);
       *str_i += 8;
+      check_endian(buf, 8, endian);
+
+      if (sign == 1) {
+        ret = convert_from_int64(CAST_FROM_STRING(buf, int64_t));
+      } else {
+        ret = convert_from_int64(CAST_FROM_STRING(buf, uint64_t));
+      }
       return ret;
     default:
       mrb_raisef(mrb, E_ARGUMENT_ERROR, "Cannot pack a fixnum with size %d!",
@@ -295,7 +348,8 @@ unpack_fixnum(mrb_state* mrb, int size, int sign, char* str, int* str_i)
 }
 
 static int
-pack_float(mrb_state* mrb, mrb_value v, int is_double, mrb_value ret_str)
+pack_float(mrb_state* mrb, mrb_value v, int is_double, int endian,
+           mrb_value ret_str)
 {
   char buf[8];
   int size;
@@ -324,20 +378,28 @@ pack_float(mrb_state* mrb, mrb_value v, int is_double, mrb_value ret_str)
     size = sizeof(float);
   }
 
-  mrb_str_cat(mrb, ret_str, buf, size);
+  mrb_str_cat(mrb, ret_str, check_endian(buf, size, endian), size);
   return size;
 }
 
 static mrb_value
-unpack_float(mrb_state* mrb, int is_double, char* str, int* str_i)
+unpack_float(mrb_state* mrb, int is_double, int endian, char* str, int* str_i)
 {
   mrb_value ret;
+  char buf[8];
+
   if (is_double == 1) {
-    ret = mrb_float_value(CAST_FROM_STRING(str, *str_i, double));
+    memcpy(buf, str + (*str_i), sizeof(double));
     *str_i += sizeof(double);
+    check_endian(buf, sizeof(double), endian);
+
+    ret = mrb_float_value(CAST_FROM_STRING(buf, double));
   } else {
-    ret = mrb_float_value(CAST_FROM_STRING(str, *str_i, float));
+    memcpy(buf, str + (*str_i), sizeof(float));
     *str_i += sizeof(float);
+    check_endian(buf, sizeof(float), endian);
+
+    ret = mrb_float_value(CAST_FROM_STRING(buf, float));
   }
   return ret;
 }
@@ -375,10 +437,11 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
     while (opts.pack_len > 0) {
       switch (opts.type) {
         case PACK_INTEGER:
-          pack_fixnum(mrb, arr[arr_i++], opts.size, opts.sign, ret);
+          pack_fixnum(mrb, arr[arr_i++], opts.size, opts.sign, opts.endian,
+                      ret);
           break;
         case PACK_FLOAT:
-          pack_float(mrb, arr[arr_i++], opts.is_double, ret);
+          pack_float(mrb, arr[arr_i++], opts.is_double, opts.endian, ret);
           break;
       }
       opts.pack_len--;
@@ -392,7 +455,7 @@ static mrb_value
 mrb_string_unpack(mrb_state* mrb, mrb_value str)
 {
   mrb_value ret, unpacked_v;
-  char *str_p, *tstr_p, c;
+  char *str_p, *tstr_p;
   int str_i, str_len, tstr_i, tstr_len;
   struct parse_options opts;
 
@@ -419,10 +482,12 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
       unpacked_v = mrb_nil_value();
       switch (opts.type) {
         case PACK_INTEGER:
-          unpacked_v = unpack_fixnum(mrb, opts.size, opts.sign, str_p, &str_i);
+          unpacked_v = unpack_fixnum(mrb, opts.size, opts.sign, opts.endian,
+                                     str_p, &str_i);
           break;
         case PACK_FLOAT:
-          unpacked_v = unpack_float(mrb, opts.is_double, str_p, &str_i);
+          unpacked_v = unpack_float(mrb, opts.is_double, opts.endian,
+                                    str_p, &str_i);
           break;
       }
       if (!mrb_nil_p(unpacked_v)) {
