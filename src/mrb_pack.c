@@ -11,7 +11,8 @@
 #define CAST_FROM_STRING(str_p_, str_i_, t_) *((t_*) ((str_p_) + (str_i_)))
 
 enum pack_type {
-  PACK_INTEGER = 0
+  PACK_INTEGER = 0,
+  PACK_FLOAT
 };
 
 static int32_t
@@ -193,6 +194,54 @@ unpack_fixnum(mrb_state* mrb, int size, int sign, char* str, int* str_i)
   return mrb_nil_value();
 }
 
+static int
+pack_float(mrb_state* mrb, mrb_value v, int is_double, mrb_value ret_str)
+{
+  char buf[8];
+  int size;
+  mrb_float f;
+
+  switch (mrb_type(v)) {
+    case MRB_TT_FLOAT:
+      f = mrb_float(v);
+      break;
+    case MRB_TT_FIXNUM:
+      f = (mrb_float) mrb_fixnum(v);
+      break;
+    default:
+      {
+        mrb_value tmp = mrb_convert_type(mrb, v, MRB_TT_FLOAT, "Float", "to_f");
+        f = mrb_float(tmp);
+      }
+      break;
+  }
+
+  if (is_double == 1) {
+    *((double*) buf) = (double) f;
+    size = sizeof(double);
+  } else {
+    *((float*) buf) = (float) f;
+    size = sizeof(float);
+  }
+
+  mrb_str_cat(mrb, ret_str, buf, size);
+  return size;
+}
+
+static mrb_value
+unpack_float(mrb_state* mrb, int is_double, char* str, int* str_i)
+{
+  mrb_value ret;
+  if (is_double == 1) {
+    ret = mrb_float_value(CAST_FROM_STRING(str, *str_i, double));
+    *str_i += sizeof(double);
+  } else {
+    ret = mrb_float_value(CAST_FROM_STRING(str, *str_i, float));
+    *str_i += sizeof(float);
+  }
+  return ret;
+}
+
 static mrb_value
 mrb_array_pack(mrb_state* mrb, mrb_value ary)
 {
@@ -200,7 +249,7 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
   char *tstr_p, c;
   int arr_len, arr_i, tstr_i, tstr_len;
   enum pack_type type = PACK_INTEGER;
-  int size = -1, sign = -1, pack_len = 0;
+  int size = -1, sign = -1, pack_len = 0, is_double = 0;
 
   /* Template string */
   mrb_get_args(mrb, "s", &tstr_p, &tstr_len);
@@ -266,6 +315,18 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
         sign = 1;
         size = 8;
         break;
+      case 'D':
+      case 'd':
+        pack_len = 1;
+        type = PACK_FLOAT;
+        is_double = 1;
+        break;
+      case 'F':
+      case 'f':
+        pack_len = 1;
+        type = PACK_FLOAT;
+        is_double = 0;
+        break;
       case '*':
         /* Uses type, sign, size from last run */
         if (tstr_i == 1) {
@@ -280,6 +341,9 @@ mrb_array_pack(mrb_state* mrb, mrb_value ary)
       switch (type) {
         case PACK_INTEGER:
           pack_fixnum(mrb, arr[arr_i++], size, sign, ret);
+          break;
+        case PACK_FLOAT:
+          pack_float(mrb, arr[arr_i++], is_double, ret);
           break;
       }
       pack_len--;
@@ -296,7 +360,7 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
   char *str_p, *tstr_p, c;
   int str_i, str_len, tstr_i, tstr_len;
   enum pack_type type = PACK_INTEGER;
-  int size = -1, sign = -1, pack_len = 0;
+  int size = -1, sign = -1, pack_len = 0, is_double = 0;
 
   mrb_get_args(mrb, "s", &tstr_p, &tstr_len);
   tstr_i = 0;
@@ -359,6 +423,18 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
         sign = 1;
         size = 8;
         break;
+      case 'D':
+      case 'd':
+        pack_len = 1;
+        type = PACK_FLOAT;
+        is_double = 1;
+        break;
+      case 'F':
+      case 'f':
+        pack_len = 1;
+        type = PACK_FLOAT;
+        is_double = 0;
+        break;
       case '*':
         /* Uses type, sign, size from last run */
         if (tstr_i == 1) {
@@ -374,6 +450,9 @@ mrb_string_unpack(mrb_state* mrb, mrb_value str)
       switch (type) {
         case PACK_INTEGER:
           unpacked_v = unpack_fixnum(mrb, size, sign, str_p, &str_i);
+          break;
+        case PACK_FLOAT:
+          unpacked_v = unpack_float(mrb, is_double, str_p, &str_i);
           break;
       }
       if (!mrb_nil_p(unpacked_v)) {
