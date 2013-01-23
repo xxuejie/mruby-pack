@@ -140,7 +140,7 @@ pack_fixnum(mrb_state* mrb, mrb_value v, int size, int sign, mrb_value ret_str)
       mrb_str_cat(mrb, ret_str, buf, 8);
       return 8;
     default:
-      mrb_raisef(mrb, E_RUNTIME_ERROR, "Cannot pack a fixnum with size %d!",
+      mrb_raisef(mrb, E_ARGUMENT_ERROR, "Cannot pack a fixnum with size %d!",
                  size);
   }
 
@@ -186,7 +186,7 @@ unpack_fixnum(mrb_state* mrb, int size, int sign, char* str, int* str_i)
       *str_i += 8;
       return ret;
     default:
-      mrb_raisef(mrb, E_RUNTIME_ERROR, "Cannot pack a fixnum with size %d!",
+      mrb_raisef(mrb, E_ARGUMENT_ERROR, "Cannot pack a fixnum with size %d!",
                  size);
   }
   /* Not reachable */

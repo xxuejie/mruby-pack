@@ -53,22 +53,26 @@ assert("'*' test") do
   a.pack('s*').unpack('s*') == a
 end
 
-assert("'*' must follow some directives") do
+assert("'*' must follow some directives in pack") do
+  ok = false
+
   begin
     [1, 2].pack('*')
-  rescue ArgumentError
-    true
-  else
-    false
+  rescue ArgumentError => e
+    ok = true if e.message == "'*' must follow existing directives!"
   end
+
+  ok
 end
 
 assert("'*' must follow some directives in unpack") do
+  ok = false
+
   begin
     "abc".unpack('*')
-  rescue ArgumentError
-    true
-  else
-    false
+  rescue ArgumentError => e
+    ok = true if e.message == "'*' must follow existing directives!"
   end
+
+  ok
 end
