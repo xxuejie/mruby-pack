@@ -49,6 +49,7 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
              struct parse_options* opts)
 {
   char c = tstr[(*tstr_i)++];
+  int may_have_suffix = 0;
 
   switch (c) {
     case 'C':
@@ -71,6 +72,7 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->sign = 0;
       opts->size = 2;
       opts->endian = native_endian;
+      may_have_suffix = 1;
       break;
     case 's':
       opts->pack_len = 1;
@@ -78,6 +80,7 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->sign = 1;
       opts->size = 2;
       opts->endian = native_endian;
+      may_have_suffix = 1;
       break;
     case 'L':
       opts->pack_len = 1;
@@ -85,6 +88,7 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->sign = 0;
       opts->size = 4;
       opts->endian = native_endian;
+      may_have_suffix = 1;
       break;
     case 'l':
       opts->pack_len = 1;
@@ -92,6 +96,23 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->sign = 1;
       opts->size = 4;
       opts->endian = native_endian;
+      may_have_suffix = 1;
+      break;
+    case 'I':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 0;
+      opts->size = sizeof(unsigned int);
+      opts->endian = native_endian;
+      may_have_suffix = 1;
+      break;
+    case 'i':
+      opts->pack_len = 1;
+      opts->type = PACK_INTEGER;
+      opts->sign = 0;
+      opts->size = sizeof(signed int);
+      opts->endian = native_endian;
+      may_have_suffix = 1;
       break;
     case 'Q':
       opts->pack_len = 1;
@@ -99,6 +120,7 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->sign = 0;
       opts->size = 8;
       opts->endian = native_endian;
+      may_have_suffix = 1;
       break;
     case 'q':
       opts->pack_len = 1;
@@ -106,6 +128,7 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->sign = 1;
       opts->size = 8;
       opts->endian = native_endian;
+      may_have_suffix = 1;
       break;
     case 'D':
     case 'd':
@@ -132,6 +155,47 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       }
       opts->pack_len = ALL_ARGUMENT_SIZE;
       break;
+  }
+
+  if ((may_have_suffix == 1) && (opts->type == PACK_INTEGER)) {
+    if (*tstr_i < tstr_len) {
+      char next_c = tstr[*tstr_i];
+      if ((next_c == '!') && ((*tstr_i + 1) < tstr_len)) {
+        char next_next_c = tstr[*tstr + 1];
+        if ((next_next_c == '<') || (next_next_c == '>')) {
+          /* omit '!' if it is of the format "!<" or "!>" */
+          next_c = next_next_c;
+          (*tstr_i)++;
+        }
+      }
+
+      if (next_c == '>') {
+        (*tstr_i)++;
+        /* big endian */
+        opts->endian = 0;
+      } else if (next_c == '<') {
+        (*tstr_i)++;
+        /* little endian */
+        opts->endian = 1;
+      } else if ((next_c == '_') || (next_c == '!')) {
+        (*tstr_i)++;
+        /* TODO: maybe we do not need this */
+        switch (c) {
+          case 'S':
+            opts->size = sizeof(unsigned short);
+            break;
+          case 's':
+            opts->size = sizeof(signed short);
+            break;
+          case 'L':
+            opts->size = sizeof(unsigned long);
+            break;
+          case 'l':
+            opts->size = sizeof(signed long);
+            break;
+        }
+      }
+    }
   }
 }
 

@@ -116,3 +116,23 @@ assert("float with '*' test") do
   a = [1.1, 2.34, 5.601, 100.001, 0.0, -7.123]
   check_floats(a.pack('f*').unpack('f*'), a, 1e-5)
 end
+
+assert("test 'I' and 'i'") do
+  a = [1, 2, -3, -4]
+  a.pack('IIii').unpack("IIii") == a
+end
+
+assert("test !, _") do
+  a = [1, 2, 3, 4, 5, 6, 7, -8, 9, -10, 11, -12]
+  a.pack('S_S!I_I!L_L!s_s!i_i!l_l!').unpack('S_S!I_I!L_L!s_s!i_i!l_l!') == a
+end
+
+assert("test fixnum big endian") do
+  [45, 1234, -90000].pack("S>L>q>") ==
+    "\x00-\x00\x00\x04\xD2\xFF\xFF\xFF\xFF\xFF\xFE\xA0p"
+end
+
+assert("test fixnum little endian") do
+  [-10, 1234, 65535].pack("s<l<Q<") ==
+    "\xF6\xFF\xD2\x04\x00\x00\xFF\xFF\x00\x00\x00\x00\x00\x00"
+end
