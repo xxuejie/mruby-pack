@@ -147,6 +147,34 @@ parse_option(mrb_state* mrb, const char* tstr, int tstr_len, int* tstr_i,
       opts->size = sizeof(float);
       opts->endian = native_endian;
       break;
+    case 'E':
+      opts->pack_len = 1;
+      opts->type = PACK_FLOAT;
+      opts->is_double = 1;
+      opts->size = sizeof(double);
+      opts->endian = 1;
+      break;
+    case 'e':
+      opts->pack_len = 1;
+      opts->type = PACK_FLOAT;
+      opts->is_double = 0;
+      opts->size = sizeof(float);
+      opts->endian = 1;
+      break;
+    case 'G':
+      opts->pack_len = 1;
+      opts->type = PACK_FLOAT;
+      opts->is_double = 1;
+      opts->size = sizeof(double);
+      opts->endian = 0;
+      break;
+    case 'g':
+      opts->pack_len = 1;
+      opts->type = PACK_FLOAT;
+      opts->is_double = 0;
+      opts->size = sizeof(float);
+      opts->endian = 0;
+      break;
     case '*':
       /* Uses type, sign, size from last run */
       if (*tstr_i == 1) {

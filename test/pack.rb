@@ -136,3 +136,8 @@ assert("test fixnum little endian") do
   [-10, 1234, 65535].pack("s<l<Q<") ==
     "\xF6\xFF\xD2\x04\x00\x00\xFF\xFF\x00\x00\x00\x00\x00\x00"
 end
+
+assert("test float endian") do
+  [1.23, -4.56, 9.87654321, -7.7890123456].pack("egGE") ==
+    "\xA4p\x9D?\xC0\x91\xEB\x85@#\xC0\xCAE\x88\xF63\x10\xF81\xDA\xF2'\x1F\xC0"
+end
